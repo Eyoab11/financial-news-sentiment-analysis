@@ -26,7 +26,10 @@ __all__ = [
     'compute_technical_indicators',
     'plot_distribution',
     'plot_bar',
-    'plot_time_series'
+    'plot_time_series',
+    'extract_keywords',
+    'analyze_keywords',
+    'plot_sentiment_comparison'
 ]
 
 # Download NLTK resources
@@ -249,3 +252,47 @@ def analyze_keywords(df, column='headline', top_n=10):
     for text in df[column]:
         all_keywords.extend(extract_keywords(text))
     return Counter(all_keywords).most_common(top_n)
+
+def plot_sentiment_comparison(stock_sentiment, filename=None):
+    """Plot top and bottom stocks by sentiment.
+    
+    Args:
+        stock_sentiment (pd.Series): Series containing stock sentiment scores
+        filename (str, optional): If provided, save the plot to this file
+    """
+    try:
+        # Get top and bottom stocks
+        top_5 = stock_sentiment.nlargest(5)
+        bottom_5 = stock_sentiment.nsmallest(5)
+        
+        # Combine them using pd.concat
+        combined_stocks = pd.concat([top_5, bottom_5])
+        
+        # Plot
+        plt.figure(figsize=(12, 6))
+        ax = combined_stocks.plot(kind='bar', color=['green']*5 + ['red']*5)
+        plt.title('Top/Bottom 5 Stocks by Average Sentiment')
+        plt.xlabel('Stock Symbol')
+        plt.ylabel('Average Sentiment Score')
+        plt.xticks(rotation=45, ha='right')
+        
+        # Add value labels on top of bars
+        for i, v in enumerate(combined_stocks.values):
+            offset = 0.01 if float(v) >= 0 else -0.01
+            ax.text(i, float(v) + offset, 
+                   f'{v:.3f}', 
+                   ha='center', 
+                   va='bottom' if float(v) >= 0 else 'top')
+        
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        
+        if filename:
+            # Ensure the plots directory exists
+            os.makedirs('plots', exist_ok=True)
+            # Save to plots directory
+            plt.savefig(os.path.join('plots', os.path.basename(filename)))
+        plt.show()
+        
+    except Exception as e:
+        print(f"Error plotting sentiment comparison: {e}")
