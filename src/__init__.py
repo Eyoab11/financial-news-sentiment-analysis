@@ -12,22 +12,104 @@ import re
 from collections import Counter
 import talib
 import os
+from nltk.tokenize import word_tokenize
+from nltk.corpus import stopwords
+
+# Define which functions to export
+__all__ = [
+    'load_news_data',
+    'load_stock_data',
+    'merge_news_stock',
+    'clean_text',
+    'get_sentiment',
+    'get_publication_frequency',
+    'compute_technical_indicators',
+    'plot_distribution',
+    'plot_bar',
+    'plot_time_series'
+]
 
 # Download NLTK resources
-try:
-    nltk.data.find('tokenizers/punkt')
-    nltk.data.find('corpora/stopwords')
-except LookupError:
-    nltk.download('punkt', quiet=True)
-    nltk.download('stopwords', quiet=True)
+def download_nltk_resources():
+    """Download required NLTK resources."""
+    resources = {
+        'punkt': 'tokenizers/punkt',
+        'stopwords': 'corpora/stopwords',
+        'averaged_perceptron_tagger': 'taggers/averaged_perceptron_tagger',
+        'wordnet': 'corpora/wordnet'
+    }
+    
+    for resource, path in resources.items():
+        try:
+            nltk.data.find(path)
+        except LookupError:
+            print(f"Downloading {resource}...")
+            nltk.download(resource, quiet=True)
+    print("NLTK resources downloaded successfully.")
+
+# Download resources when module is imported
+download_nltk_resources()
+
+# Initialize stopwords
+stop_words = set(stopwords.words('english'))
+
+def extract_keywords(text):
+    """Extract keywords from text."""
+    if not isinstance(text, str):
+        return []
+    try:
+        words = word_tokenize(clean_text(text))
+        return [word for word in words if word not in stop_words and len(word) > 2]
+    except Exception as e:
+        print(f"Error processing text: {e}")
+        return []
 
 # Data Loading and Preprocessing
-def load_news_data(file_path):
+def load_news_data(file_path='data/raw_analyst_ratings.csv'):
     """Load and preprocess news data from raw_analyst_ratings.csv."""
-    df = pd.read_csv(file_path)
-    df['date'] = pd.to_datetime(df['date'], utc=True)  # Ensure UTC timezone
-    df['headline_length'] = df['headline'].apply(len)
-    return df
+    try:
+        # Read the CSV file
+        df = pd.read_csv(file_path)
+        print("Columns in the dataset:", df.columns.tolist())
+        print("\nFirst few rows:")
+        print(df.head())
+        
+        # Check for missing values
+        print("\nMissing values per column:")
+        print(df.isnull().sum())
+        
+        # Clean the date column
+        if 'date' in df.columns:
+            # First, try to identify the date format
+            sample_date = df['date'].iloc[0]
+            print(f"\nSample date format: {sample_date}")
+            
+            # Convert date column with error handling
+            try:
+                # Try parsing without timezone first
+                df['date'] = pd.to_datetime(df['date'], format='%Y-%m-%d %H:%M:%S', errors='coerce')
+                # Drop rows where date conversion failed
+                df = df.dropna(subset=['date'])
+                print(f"\nSuccessfully converted dates. Remaining rows: {len(df)}")
+            except Exception as e:
+                print(f"Error converting dates: {e}")
+                # Try alternative format if the first attempt fails
+                try:
+                    df['date'] = pd.to_datetime(df['date'], errors='coerce')
+                    df = df.dropna(subset=['date'])
+                    print(f"\nSuccessfully converted dates using alternative method. Remaining rows: {len(df)}")
+                except Exception as e:
+                    print(f"Error in alternative date conversion: {e}")
+                    raise
+        
+        # Clean the headline column if it exists
+        if 'headline' in df.columns:
+            df['headline_length'] = df['headline'].apply(lambda x: len(str(x)) if pd.notnull(x) else 0)
+        
+        return df
+    except Exception as e:
+        print(f"Error loading data: {e}")
+        raise
 
 def load_stock_data(stock_symbol, folder_path='data/yfinance_data'):
     """Load stock price data for a given stock symbol."""
@@ -115,7 +197,10 @@ def plot_distribution(data, title, xlabel, ylabel, filename=None):
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
     if filename:
-        plt.savefig(filename)
+        # Ensure the plots directory exists
+        os.makedirs('plots', exist_ok=True)
+        # Save to plots directory
+        plt.savefig(os.path.join('plots', os.path.basename(filename)))
     plt.show()
 
 def plot_bar(data, title, xlabel, ylabel, filename=None):
@@ -126,5 +211,41 @@ def plot_bar(data, title, xlabel, ylabel, filename=None):
     plt.xlabel(xlabel)
     plt.ylabel(ylabel)
     if filename:
-        plt.savefig(filename)
+        # Ensure the plots directory exists
+        os.makedirs('plots', exist_ok=True)
+        # Save to plots directory
+        plt.savefig(os.path.join('plots', os.path.basename(filename)))
     plt.show()
+
+def plot_time_series(data, title, xlabel, ylabel, filename=None):
+    """Plot a time series."""
+    plt.figure(figsize=(12, 6))
+    data.plot()
+    plt.title(title)
+    plt.xlabel(xlabel)
+    plt.ylabel(ylabel)
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    if filename:
+        # Ensure the plots directory exists
+        os.makedirs('plots', exist_ok=True)
+        # Save to plots directory
+        plt.savefig(os.path.join('plots', os.path.basename(filename)))
+    plt.show()
+
+# Add new function for keyword analysis
+def analyze_keywords(df, column='headline', top_n=10):
+    """Analyze keywords in a DataFrame column.
+    
+    Args:
+        df (pd.DataFrame): DataFrame containing the text column
+        column (str): Name of the column containing text
+        top_n (int): Number of top keywords to return
+        
+    Returns:
+        list: List of (keyword, count) tuples
+    """
+    all_keywords = []
+    for text in df[column]:
+        all_keywords.extend(extract_keywords(text))
+    return Counter(all_keywords).most_common(top_n)
